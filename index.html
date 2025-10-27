@@ -1,0 +1,2268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoreTick - Premium Watch Store</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs (Classic) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <!-- Firebase Initialization Script -->
+    <script>
+        // --- Firebase Configuration ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyAQ0EGMeeS4FEjnONzRRfzXaitmX6rIPlk",
+          authDomain: "coretick-store.firebaseapp.com",
+          projectId: "coretick-store",
+          storageBucket: "coretick-store.firebasestorage.app",
+          messagingSenderId: "983161604699",
+          appId: "1:983161604699:web:fc2d4c8134e381d30c4d7e",
+          measurementId: "G-0R7NSVJKKW"
+        };
+        
+        let db;
+        
+        // This MUST match the path in your Firebase Guide (Step 4)
+        // artifacts/default-app-id/public/data
+        const appId = 'default-app-id';
+
+        try {
+            // Initialize Firebase using the classic syntax
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            
+            // Set log level for debugging
+            firebase.firestore.setLogLevel('Debug');
+
+            console.log("Firebase initialized successfully (classic script).");
+
+        } catch (error) {
+            console.error("Firebase initialization failed:", error);
+            // We'll still allow the page to run, but real-time features will be disabled.
+        }
+        
+        // --- New Global Quick View Function ---
+        // We make this global so the other script can call it.
+        window.openQuickView = function(productCard) {
+            
+            // 1. Get the Product ID from the card
+            const productId = productCard.dataset.productId;
+            if (!productId) {
+                console.error("No product ID found on card. Make sure 'data-product-id' is set.");
+                return;
+            }
+            
+            // 2. Populate modal with card data (instant)
+            const title = productCard.querySelector('.product-title').textContent;
+            const price = productCard.querySelector('.product-price').textContent;
+            const originalPriceEl = productCard.querySelector('.product-original-price');
+            const originalPrice = originalPriceEl ? originalPriceEl.textContent : '';
+            const imgSrc = productCard.querySelector('.img-primary').src;
+            
+            const quickViewModal = document.getElementById('quick-view-modal');
+            
+            // Set data attributes on the modal itself so the cart can read them
+            quickViewModal.dataset.productId = productId;
+            quickViewModal.dataset.title = title;
+            quickViewModal.dataset.price = price;
+            quickViewModal.dataset.imgSrc = imgSrc;
+            
+            document.getElementById('quick-view-title').textContent = title;
+            document.getElementById('quick-view-price').textContent = price;
+            const qvOriginalPrice = document.getElementById('quick-view-original-price');
+            if (originalPrice) {
+                qvOriginalPrice.textContent = originalPrice;
+                qvOriginalPrice.classList.remove('hidden');
+            } else {
+                qvOriginalPrice.classList.add('hidden');
+            }
+            document.getElementById('quick-view-img').src = imgSrc;
+            document.getElementById('quick-view-quantity').value = '1';
+
+            // 3. --- GET REAL-TIME DATA ---
+            // Check if Firebase (db) was successfully initialized
+            if (db) {
+                // This is the required path for public data
+                // **FIX:** Use classic db.doc() syntax with template literal for path
+                const productRef = db.doc(`artifacts/${appId}/public/data/products/${productId}`);
+
+                // onSnapshot creates a REAL-TIME listener
+                // **FIX:** Call onSnapshot directly on the DocumentReference
+                const unsubscribe = productRef.onSnapshot((docSnapshot) => {
+                    if (docSnapshot.exists) {
+                        const data = docSnapshot.data();
+                        const stockLevel = data.stockLeft || 0; // Get stock, default to 0
+                        const viewers = data.viewers || 0;
+                        const sold = data.soldLast24h || 0;
+                        
+                        // Assuming "full stock" is 25 for the bar display
+                        const stockPercentage = Math.max(0, Math.min(100, (stockLevel / 25) * 100));
+
+                        document.getElementById('quick-view-stock-message').textContent = `HURRY! ONLY ${stockLevel} LEFT IN STOCK.`;
+                        document.getElementById('quick-view-stock-bar').style.width = `${stockPercentage}%`;
+                        
+                        document.getElementById('quick-view-viewers').innerHTML = `<span class="font-bold text-black">${viewers}</span> People are viewing this right now`;
+                        document.getElementById('quick-view-sold').innerHTML = `<span class="font-bold text-black">${sold}</span> sold in last 24 hours`;
+                    
+                    } else {
+                        // This happens if you haven't created the document in Firestore yet
+                        console.warn(`Product with ID "${productId}" not found in Firestore.`);
+                        document.getElementById('quick-view-stock-message').textContent = "Stock info unavailable";
+                        document.getElementById('quick-view-stock-bar').style.width = "100%";
+                        document.getElementById('quick-view-viewers').innerHTML = `<span class="font-bold text-black">--</span> People are viewing this right now`;
+                        document.getElementById('quick-view-sold').innerHTML = `<span class="font-bold text-black">--</span> sold in last 24 hours`;
+                    }
+                }, (error) => {
+                    console.error("Error listening to product snapshot:", error);
+                });
+                
+                // We'll store this 'unsubscribe' function to call it when the modal closes
+                // This stops us from listening and saves resources
+                document.getElementById('quick-view-modal').dataset.unsubscribe = unsubscribe;
+
+            } else {
+                console.error("Firestore (db) is not initialized. Cannot fetch real-time data.");
+                // Fallback to random data if Firebase failed
+                const stockLevel = Math.floor(Math.random() * 20) + 5;
+                const stockPercentage = (stockLevel / 25) * 100;
+                const viewers = Math.floor(Math.random() * 30) + 10;
+                const sold = Math.floor(Math.random() * 40) + 15;
+                const soldHours = Math.floor(Math.random() * 12) + 8;
+                document.getElementById('quick-view-stock-message').textContent = `HURRY! ONLY ${stockLevel} LEFT IN STOCK.`;
+                document.getElementById('quick-view-stock-bar').style.width = `${stockPercentage}%`;
+                document.getElementById('quick-view-viewers').innerHTML = `<span class="font-bold text-black">${viewers}</span> People are viewing this right now`;
+                document.getElementById('quick-view-sold').innerHTML = `<span class="font-bold text-black">${sold}</span> sold in last ${soldHours} hours`;
+            }
+
+            // 4. Start Countdown (new feature from video)
+            if (window.startCountdown) {
+                // Set a random end time between 1 and 3 hours from now
+                const endTime = new Date().getTime() + (Math.random() * 2 * 60 * 60 * 1000) + (1 * 60 * 60 * 1000);
+                window.startCountdown(endTime, 'qv-countdown');
+            }
+            
+            // 5. Set Delivery Estimate (new feature from video)
+            const today = new Date();
+            const deliveryDay1 = new Date(today.setDate(today.getDate() + 2));
+            const deliveryDay2 = new Date(today.setDate(today.getDate() + 2)); // 2+2=4 days from original
+            const options = { weekday: 'long', month: 'long', day: 'numeric' };
+            document.getElementById('quick-view-delivery').innerHTML = `Order in the next <span class="font-bold text-black">1 hours 51 minutes</span> to get it between <span class="font-bold text-black">${deliveryDay1.toLocaleDateString('en-US', options)}</span> and <span class="font-bold text-black">${deliveryDay2.toLocaleDateString('en-US', options)}</span>`;
+
+
+            // 6. Show the modal
+            document.getElementById('quick-view-overlay').classList.add('active');
+            document.getElementById('quick-view-modal').classList.add('active');
+            document.body.classList.add('no-scroll');
+        }
+    </script>
+    
+    <style>
+        /* Base font */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #fff; /* Ensure body bg is set for preloader */
+        }
+
+        /* --- Preloader Styles --- */
+        #preloader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000; /* Black background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.75s ease;
+            flex-direction: column; /* Align content vertically */
+        }
+        #preloader.fade-out {
+            opacity: 0;
+        }
+        #preloader img {
+            width: 150px;
+            height: 150px;
+        }
+        
+        /* New spinner style */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.2); /* Light grey border */
+            border-left-color: #ffffff; /* White loading part */
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        /* --- End Preloader Styles --- */
+
+
+        /* Custom Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes subtleFloat {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        /* Animation Utility Classes */
+        .animate-fadeInUp {
+            animation: fadeInUp 1s ease-out forwards;
+        }
+        
+        .animate-fadeInUp-delay-1 {
+            opacity: 0; /* Start hidden */
+            animation: fadeInUp 1s ease-out 0.3s forwards;
+        }
+
+        .animate-fadeInUp-delay-2 {
+            opacity: 0; /* Start hidden */
+            animation: fadeInUp 1s ease-out 0.6s forwards;
+        }
+
+        .animate-subtleFloat {
+            animation: subtleFloat 4s ease-in-out infinite;
+        }
+
+        /* Scrollbar styling (optional, but adds to the theme) */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #222;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        /* Pagination active class */
+        .pagination-active {
+            z-index: 10;
+            color: white;
+            background-color: #000; /* black */
+            border-color: #000; /* black */
+        }
+        .pagination-inactive {
+            color: #6B7280; /* gray-500 */
+            background-color: #fff; /* white */
+            border-color: #D1D5DB; /* gray-300 */
+        }
+        .pagination-inactive:hover {
+            background-color: #F3F4F6; /* gray-100 */
+            color: #374151; /* gray-700 */
+        }
+        
+        /* Policy Page Styles */
+        .policy-page {
+            max-width: 48rem; /* Equivalent to max-w-3xl */
+            margin-left: auto;
+            margin-right: auto;
+            color: #374151; /* Equivalent to text-gray-700 */
+        }
+        .policy-page h2 {
+            font-size: 1.875rem; /* Equivalent to text-3xl */
+            line-height: 2.25rem; /* Equivalent to text-3xl */
+            font-weight: 700;
+            color: #000;
+            text-align: center;
+            margin-bottom: 2.5rem;
+        }
+        .policy-page h3 {
+            font-size: 1.5rem; /* Equivalent to text-2xl */
+            line-height: 2rem; /* Equivalent to text-2xl */
+            font-weight: 600;
+            color: #000;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+        .policy-page p {
+            margin-bottom: 1rem;
+            line-height: 1.625; /* Equivalent to leading-relaxed */
+        }
+        .policy-page p.intro {
+            font-size: 1.125rem; /* Equivalent to text-lg */
+            font-weight: 500;
+            color: #1F2937; /* Equivalent to text-gray-800 */
+            margin-bottom: 1rem;
+        }
+        .policy-page ul {
+            list-style-type: disc;
+            list-style-position: outside;
+            margin-bottom: 1rem;
+            padding-left: 1.5rem; /* Equivalent to pl-6 */
+            space-y: 0.5rem; /* Equivalent to space-y-2 */
+        }
+        
+        /* --- FAQ Accordion Styles --- */
+        .faq-answer {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+            padding-top: 0;
+            padding-bottom: 0;
+        }
+        
+        .faq-item.active .faq-answer {
+            max-height: 75rem; /* Large value to allow content to expand */
+            transition: max-height 0.5s ease-in, padding 0.3s ease-in;
+            padding-top: 1rem;
+            padding-bottom: 1.5rem;
+        }
+        
+        /* Icon rotation */
+        .faq-item .faq-icon {
+            transition: transform 0.3s ease-in-out;
+        }
+        
+        /* --- Product Card Hover Styles --- */
+        .product-card .image-container {
+            position: relative;
+        }
+        .product-card .img-secondary {
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+        .product-card:hover .img-secondary {
+            opacity: 1;
+        }
+        .product-card .hover-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+        .product-card:hover .hover-overlay {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .product-card .wishlist-icon {
+            position: absolute;
+            top: 0.75rem; /* 12px */
+            right: 0.75rem; /* 12px */
+            z-index: 10;
+            opacity: 0;
+            transform: scale(0.8);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        .product-card:hover .wishlist-icon {
+            opacity: 1;
+            transform: scale(1);
+        }
+        
+        /* --- Quick View & Cart Modal Styles --- */
+        #quick-view-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none; /* Allow clicks through when hidden */
+        }
+        #quick-view-modal, #shopping-cart-modal {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 100%;
+            max-width: 42rem; /* ~672px */
+            height: 100%;
+            background-color: white;
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease-in-out;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.1);
+        }
+        #quick-view-overlay.active {
+            opacity: 1;
+            pointer-events: auto; /* Block clicks when active */
+        }
+        #quick-view-modal.active, #shopping-cart-modal.active {
+            transform: translateX(0);
+        }
+        .no-scroll {
+            overflow: hidden;
+        }
+
+        /* Stock progress bar */
+        .stock-progress-bar {
+            width: 100%;
+            height: 8px;
+            background-color: #e5e7eb; /* gray-200 */
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+        .stock-progress-bar-inner {
+            height: 100%;
+            background-color: #ef4444; /* red-500 */
+            border-radius: 9999px;
+            transition: width 0.3s ease-out;
+        }
+        
+        /* --- New Cart Modal Footer Styles --- */
+        #shopping-cart-footer {
+            position: sticky;
+            bottom: 0;
+            background-color: #f9fafb; /* gray-50 */
+            border-top: 1px solid #e5e7eb; /* gray-200 */
+        }
+        
+        /* --- New Checkout Page Styles --- */
+        #checkout-page {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .checkout-form-input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #D1D5DB; /* gray-300 */
+            border-radius: 0.375rem; /* rounded-md */
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+        }
+        .checkout-form-input:focus {
+            outline: 2px solid transparent;
+            outline-offset: 2px;
+            border-color: #000;
+            box-shadow: 0 0 0 2px #000;
+        }
+        .checkout-summary {
+            background-color: #f9fafb; /* gray-50 */
+            border-left: 1px solid #e5e7eb; /* gray-200 */
+        }
+        .checkout-breadcrumb a {
+            color: #000;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body class="bg-white text-black antialiased">
+
+    <!-- --- Preloader HTML --- -->
+    <div id="preloader">
+        <img src="https://res.cloudinary.com/dzzd68fzx/image/upload/v1761482887/ChatGPT_Image_Oct_26_2025_05_48_06_PM_uik06n.png" alt="Loading CoreTick...">
+        <h2 class="text-white text-2xl font-bold mt-4 tracking-wider">CORETICK</h2>
+        <div class="spinner mt-6"></div>
+    </div>
+    <!-- --- End Preloader HTML --- -->
+
+    <!-- Header -->
+    <header class="bg-black text-white shadow-lg sticky top-0 z-50 transition-all duration-300">
+        <nav class="container mx-auto px-6 py-5 flex justify-between items-center">
+            
+            <!-- Logo -->
+            <a href="#" id="home-link-logo" class="text-3xl font-bold tracking-tight uppercase">
+                CoreTick
+            </a>
+            
+            <!-- Desktop Nav -->
+            <div class="hidden md:flex items-center space-x-8">
+                <a href="#home" id="home-link" class="hover:text-gray-300 transition-colors duration-300">Home</a>
+                <a href="#shop" id="shop-link" class="hover:text-gray-300 transition-colors duration-300">Shop</a>
+                <a href="#about" id="about-link" class="hover:text-gray-300 transition-colors duration-300">About Us</a>
+                <a href="#contact" id="contact-link" class="hover:text-gray-300 transition-colors duration-300">Contact Us</a>
+            </div>
+            
+            <!-- Icons & Mobile Menu Button -->
+            <div class="flex items-center space-x-5">
+                <a href="#" class="hover:text-gray-300 transition-colors duration-300" aria-label="Search">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </a>
+                <!-- MODIFIED: Cart button now opens the cart modal -->
+                <button id="open-cart-btn-header" class="hover:text-gray-300 transition-colors duration-300" aria-label="Cart">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                    </svg>
+                </button>
+                
+                <!-- Mobile Menu Button -->
+                <button id="menu-btn" class="md:hidden focus:outline-none" aria-label="Open menu">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                </button>
+            </div>
+        </nav>
+        
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="hidden md:hidden bg-black">
+            <a href="#home" id="mobile-home-link" class="block py-3 px-6 text-sm hover:bg-gray-800">Home</a>
+            <a href="#shop" id="mobile-shop-link" class="block py-3 px-6 text-sm hover:bg-gray-800">Shop</a>
+            <a href="#about" id="mobile-about-link" class="block py-3 px-6 text-sm hover:bg-gray-800">About Us</a>
+            <a href="#contact" id="mobile-contact-link" class="block py-3 px-6 text-sm hover:bg-gray-800">Contact Us</a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+
+        <!-- Main Content Page (Home) -->
+        <div id="main-content">
+            <!-- Hero Section -->
+            <section id="home" class="bg-black text-white py-20 md:py-32 overflow-hidden">
+                <div class="container mx-auto px-6 flex flex-col md:flex-row items-center">
+                    
+                    <!-- Hero Text -->
+                    <div class="md:w-1/2 text-center md:text-left mb-10 md:mb-0 md:pr-12">
+                        <h1 class="text-4xl md:text-6xl font-bold tracking-tight leading-tight mb-6 animate-fadeInUp">
+                            Timeless Style, Modern Elegance
+                        </h1>
+                        <p class="text-lg md:text-xl text-gray-300 mb-10 animate-fadeInUp-delay-1">
+                            Explore our premium watch collection designed to elevate your style.
+                        </p>
+                        <a href="#shop" id="shop-link-hero" class="bg-white text-black font-bold py-3 px-8 rounded-lg text-lg hover:bg-gray-200 transition-all duration-300 animate-fadeInUp-delay-2">
+                            Shop Collection
+                        </a>
+                    </div>
+                    
+                    <!-- Hero Image -->
+                    <div class="md:w-1/2 flex justify-center items-center">
+                        <img src="https://res.cloudinary.com/dzzd68fzx/image/upload/v1761473733/1675922477history-of-patek-philippe-nautilus_cqbvqt.jpg" 
+                             alt="Premium Watch" 
+                             onerror="this.src='https://placehold.co/450x450/111111/ffffff?text=Image+Failed+To+Load&font=inter'; this.onerror=null;"
+                             class="rounded-lg shadow-2xl animate-subtleFloat w-full max-w-lg object-contain h-auto">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Featured Products Section -->
+            <section id="featured" class="py-24 bg-white">
+                <div class="container mx-auto px-6">
+                    <h2 class="text-3xl md:text-4xl font-bold text-center mb-16">
+                        Our Featured Watches
+                    </h2>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
+                        
+                        <!-- Product Card 1 -->
+                        <!-- MODIFIED: Added product-id, price classes, and add-to-cart-btn class -->
+                        <div class="product-card bg-gray-50 border border-gray-200 rounded-lg shadow-lg overflow-hidden transition-all duration-300 group hover:shadow-2xl hover:-translate-y-2" data-product-id="classic-chronograph">
+                            <div class="image-container overflow-hidden h-72">
+                                <!-- Main Image -->
+                                <img src="https://placehold.co/600x600/f3f4f6/111111?text=Watch+Model+1&font=inter" 
+                                     alt="Classic Chronograph" 
+                                     class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 img-primary">
+                                <!-- Secondary Image (on hover) -->
+                                <img src="https://placehold.co/600x600/e0e0e0/333333?text=Watch+1+View+2&font=inter" 
+                                     alt="Classic Chronograph alternate view" 
+                                     class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 img-secondary">
+                                
+                                <!-- Wishlist Icon -->
+                                <button class="wishlist-icon bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition-colors" aria-label="Add to Wishlist">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
+                                    </svg>
+                                </button>
+                                
+                                <!-- Hover Overlay Buttons -->
+                                <div class="hover-overlay">
+                                    <a href="#" class="quick-view-btn w-full bg-white text-black text-center py-2.5 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors duration-300">
+                                        Quick View
+                                    </a>
+                                    <!-- MODIFIED: Added add-to-cart-btn class -->
+                                    <a href="#" class="add-to-cart-btn w-full bg-black text-white text-center py-2.5 px-4 rounded-lg font-semibold hover:bg-gray-800 transition-colors duration-300">
+                                        Add to Cart
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="p-6 text-center">
+                                <h3 class="product-title text-xl font-semibold mb-2">Classic Chronograph</h3>
+                                <!-- MODIFIED: Added strikethrough price -->
+                                <p class="text-lg text-gray-800 font-bold mb-4">
+                                    <span class="product-price text-red-600">PKR 3,200.00</span>
+                                    <span class="product-original-price text-sm text-gray-500 line-through ml-2">PKR 5,999.00</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Product Card 2 -->
+                        <div class="product-card bg-gray-50 border border-gray-200 rounded-lg shadow-lg overflow-hidden transition-all duration-300 group hover:shadow-2xl hover:-translate-y-2" data-product-id="minimalist-black">
+                            <div class="image-container overflow-hidden h-72">
+                                <!-- Main Image -->
+                                <img src="https://placehold.co/600x600/f3f4f6/111111?text=Watch+Model+2&font=inter" 
+                                     alt="Minimalist Black" 
+                                     class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 img-primary">
+                                <!-- Secondary Image (on hover) -->
+                                <img src="https://placehold.co/600x600/e0e0e0/333333?text=Watch+2+View+2&font=inter" 
+                                     alt="Minimalist Black alternate view" 
+                                     class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 img-secondary">
+                                
+                                <!-- Wishlist Icon -->
+                                <button class="wishlist-icon bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition-colors" aria-label="Add to Wishlist">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
+                                    </svg>
+                                </button>
+                                
+                                <!-- Hover Overlay Buttons -->
+                                <div class="hover-overlay">
+                                    <a href="#" class="quick-view-btn w-full bg-white text-black text-center py-2.5 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors duration-300">
+                                        Quick View
+                                    </a>
+                                    <a href="#" class="add-to-cart-btn w-full bg-black text-white text-center py-2.5 px-4 rounded-lg font-semibold hover:bg-gray-800 transition-colors duration-300">
+                                        Add to Cart
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="p-6 text-center">
+                                <h3 class="product-title text-xl font-semibold mb-2">Minimalist Black</h3>
+                                <!-- MODIFIED: Changed price to single price -->
+                                <p class="text-lg text-gray-800 font-bold mb-4">
+                                    <span class="product-price text-gray-800">PKR 4,999.00</span>
+                                    <span class="product-original-price hidden"></span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Product Card 3 -->
+                        <div class="product-card bg-gray-50 border border-gray-200 rounded-lg shadow-lg overflow-hidden transition-all duration-300 group hover:shadow-2xl hover:-translate-y-2" data-product-id="silver-elegance">
+                            <div class="image-container overflow-hidden h-72">
+                                <!-- Main Image -->
+                                <img src="https://placehold.co/600x600/f3f4f6/111111?text=Watch+Model+3&font=inter" 
+                                     alt="Silver Elegance" 
+                                     class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 img-primary">
+                                <!-- Secondary Image (on hover) -->
+                                <img src="https://placehold.co/600x600/e0e0e0/333333?text=Watch+3+View+2&font=inter" 
+                                     alt="Silver Elegance alternate view" 
+                                     class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 img-secondary">
+                                
+                                <!-- Wishlist Icon -->
+                                <button class="wishlist-icon bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition-colors" aria-label="Add to Wishlist">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
+                                    </svg>
+                                </button>
+                                
+                                <!-- Hover Overlay Buttons -->
+                                <div class="hover-overlay">
+                                    <a href="#" class="quick-view-btn w-full bg-white text-black text-center py-2.5 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors duration-300">
+                                        Quick View
+                                    </a>
+                                    <a href="#" class="add-to-cart-btn w-full bg-black text-white text-center py-2.5 px-4 rounded-lg font-semibold hover:bg-gray-800 transition-colors duration-300">
+                                        Add to Cart
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="p-6 text-center">
+                                <h3 class="product-title text-xl font-semibold mb-2">Silver Elegance</h3>
+                                <!-- MODIFIED: Added strikethrough price -->
+                                <p class="text-lg text-gray-800 font-bold mb-4">
+                                    <span class="product-price text-red-600">PKR 4,750.00</span>
+                                    <span class="product-original-price text-sm text-gray-500 line-through ml-2">PKR 9,499.00</span>
+                                </p>
+                            </div>
+                        </div>
+                        
+                    </div>
+
+                    <!-- View More Button -->
+                    <div class="text-center mt-16">
+                        <button id="view-more-btn" class="bg-black text-white font-bold py-3 px-8 rounded-lg text-lg hover:bg-gray-800 transition-all duration-300">
+                            View More
+                        </button>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- Why Choose Us Section -->
+            <section id="about" class="bg-gray-100 py-20">
+                <div class="container mx-auto px-6">
+                    <h2 class="text-3xl md:text-4xl font-bold text-center mb-16">
+                        Why Choose Us?
+                    </h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-12 text-center">
+                        
+                        <!-- Feature 1 -->
+                        <div class="flex flex-col items-center">
+                            <div class="bg-black text-white rounded-full p-5 mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2-2h8z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2-2h8zM21 16V6a1 1 0 00-1-1h-1m1 11l-2-2m-2-7h-7m11 0h.01" />
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-semibold mb-2">Free Shipping</h3>
+                            <p class="text-gray-700">Enjoy free shipping on all orders nationwide.</p>
+                        </div>
+                        
+                        <!-- Feature 2 -->
+                        <div class="flex flex-col items-center">
+                            <div class="bg-black text-white rounded-full p-5 mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-semibold mb-2">Secure Payments</h3>
+                            <p class="text-gray-700">Your payments are 100% secure and encrypted.</p>
+                        </div>
+                        
+                        <!-- Feature 3 -->
+                        <div class="flex flex-col items-center">
+                            <div class="bg-black text-white rounded-full p-5 mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-semibold mb-2">Premium Quality</h3>
+                            <p class="text-gray-700">Crafted from only the finest materials available.</p>
+                        </div>
+                        
+                    </div>
+                </div>
+            </section>
+            
+            <!-- --- FAQ Section --- -->
+            <section id="faq" class="py-24 bg-white">
+                <div class="container mx-auto px-6 max-w-3xl">
+                    <h2 class="text-3xl md:text-4xl font-bold text-center mb-16">
+                        Frequently Asked Questions
+                    </h2>
+                    
+                    <div id="faq-container" class="space-y-4">
+                        
+                        <!-- FAQ Item 1 -->
+                        <div class="faq-item border border-gray-200 rounded-lg overflow-hidden">
+                            <button class="faq-toggle flex justify-between items-center w-full p-5 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none">
+                                <span class="text-lg font-semibold text-gray-800">1. How long does delivery take?</span>
+                                <span class="faq-icon text-gray-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                </span>
+                            </button>
+                            <div class="faq-answer px-5 text-gray-700 leading-relaxed">
+                                <p>Delivery usually takes:</p>
+                                <ul class="list-disc list-outside pl-5 space-y-1 mt-2">
+                                    <li>2–4 business days in major cities</li>
+                                    <li>4–7 business days in other areas across Pakistan</li>
+                                </ul>
+                                <p class="mt-2">You’ll receive a tracking number once your order has been shipped.</p>
+                            </div>
+                        </div>
+
+                        <!-- FAQ Item 2 -->
+                        <div class="faq-item border border-gray-200 rounded-lg overflow-hidden">
+                            <button class="faq-toggle flex justify-between items-center w-full p-5 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none">
+                                <span class="text-lg font-semibold text-gray-800">2. Do you offer free shipping?</span>
+                                <span class="faq-icon text-gray-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                </span>
+                            </button>
+                            <div class="faq-answer px-5 text-gray-700 leading-relaxed">
+                                <p>Yes! Shipping is completely free on all orders across Pakistan.</p>
+                                <p class="mt-2">There are no hidden fees or minimum purchase limits.</p>
+                            </div>
+                        </div>
+                        
+                        <!-- FAQ Item 3 -->
+                        <div class="faq-item border border-gray-200 rounded-lg overflow-hidden">
+                            <button class="faq-toggle flex justify-between items-center w-full p-5 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none">
+                                <span class="text-lg font-semibold text-gray-800">3. What is Open-Box Delivery?</span>
+                                <span class="faq-icon text-gray-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                </span>
+                            </button>
+                            <div class="faq-answer px-5 text-gray-700 leading-relaxed">
+                                <p>Open-Box Delivery allows you to check your product in front of the delivery agent before accepting it.</p>
+                                <p class="mt-2">If you notice scratches or damage, do not accept the parcel and contact us immediately.</p>
+                            </div>
+                        </div>
+                        
+                        <!-- FAQ Item 4 -->
+                        <div class="faq-item border border-gray-200 rounded-lg overflow-hidden">
+                            <button class="faq-toggle flex justify-between items-center w-full p-5 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none">
+                                <span class="text-lg font-semibold text-gray-800">4. What payment methods do you accept?</span>
+                                <span class="faq-icon text-gray-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                </span>
+                            </button>
+                            <div class="faq-answer px-5 text-gray-700 leading-relaxed">
+                                <p>We currently accept:</p>
+                                <ul class="list-disc list-outside pl-5 space-y-1 mt-2">
+                                    <li>Cash on Delivery (COD)</li>
+                                    <li>Bank Transfer</li>
+                                    <li>Easypaisa / JazzCash (where available)</li>
+                                </ul>
+                                <p class="mt-2">All payment methods are 100% secure.</p>
+                            </div>
+                        </div>
+                        
+                        <!-- FAQ Item 5 -->
+                        <div class="faq-item border border-gray-200 rounded-lg overflow-hidden">
+                            <button class="faq-toggle flex justify-between items-center w-full p-5 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none">
+                                <span class="text-lg font-semibold text-gray-800">5. How can I track my order?</span>
+                                <span class="faq-icon text-gray-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                </span>
+                            </button>
+                            <div class="faq-answer px-5 text-gray-700 leading-relaxed">
+                                <p>Once your order is shipped, we’ll send you a tracking number by email or SMS.</p>
+                                <p class="mt-2">You can use it to track your order directly on the courier’s website.</p>
+                            </div>
+                        </div>
+
+                        <!-- FAQ Item 6 -->
+                        <div class="faq-item border border-gray-200 rounded-lg overflow-hidden">
+                            <button class="faq-toggle flex justify-between items-center w-full p-5 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none">
+                                <span class="text-lg font-semibold text-gray-800">6. What is your return policy?</span>
+                                <span class="faq-icon text-gray-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                </span>
+                            </button>
+                            <div class="faq-answer px-5 text-gray-700 leading-relaxed">
+                                <p>We offer a 30-day return warranty on all eligible products.</p>
+                                <p class="mt-2">To qualify, items must be unused, in their original packaging, and returned within 30 days of delivery.</p>
+                                <p class="mt-2">If the product is scratched or damaged upon delivery, please do not accept the parcel.</p>
+                            </div>
+                        </div>
+
+                        <!-- FAQ Item 7 -->
+                        <div class="faq-item border border-gray-200 rounded-lg overflow-hidden">
+                            <button class="faq-toggle flex justify-between items-center w-full p-5 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none">
+                                <span class="text-lg font-semibold text-gray-800">7. Can I cancel my order?</span>
+                                <span class="faq-icon text-gray-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                </span>
+                            </button>
+                            <div class="faq-answer px-5 text-gray-700 leading-relaxed">
+                                <p>You can cancel your order before it has been shipped by contacting our support team.</p>
+                                <p class="mt-2">Once shipped, the order cannot be canceled, but you may request a return after delivery if eligible.</p>
+                            </div>
+                        </div>
+                        
+                        <!-- FAQ Item 8 -->
+                        <div class="faq-item border border-gray-200 rounded-lg overflow-hidden">
+                            <button class="faq-toggle flex justify-between items-center w-full p-5 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none">
+                                <span class="text-lg font-semibold text-gray-800">8. Are your watches original and tested?</span>
+                                <span class="faq-icon text-gray-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                </span>
+                            </button>
+                            <div class="faq-answer px-5 text-gray-700 leading-relaxed">
+                                <p>Yes! Every watch at CoreTick is quality-checked, tested, and verified before shipping to ensure you receive a premium and reliable product.</p>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+            <!-- --- End FAQ Section --- -->
+
+
+            <!-- Newsletter & Contact Section -->
+            <section id="contact" class="bg-black text-white py-20">
+                <div class="container mx-auto px-6 text-center">
+                    <h2 class="text-3xl font-bold mb-4">Stay Connected</h2>
+                    <p class="text-gray-300 mb-8 max-w-lg mx-auto">Subscribe to our newsletter for the latest collections and special offers.</p>
+                    <form class="flex flex-col sm:flex-row justify-center max-w-md mx-auto">
+                        <input type="email" 
+                               placeholder="Your email address" 
+                               class="w-full sm:w-auto flex-grow px-4 py-3 rounded-lg sm:rounded-l-lg sm:rounded-r-none mb-3 sm:mb-0 text-black focus:outline-none focus:ring-2 focus:ring-white"
+                               required>
+                        <button type="submit" 
+                                class="bg-white text-black font-bold py-3 px-6 rounded-lg sm:rounded-r-lg sm:rounded-l-none hover:bg-gray-200 transition-colors duration-300">
+                            Subscribe
+                        </button>
+                    </form>
+                    
+                    <!-- Direct Contact Links -->
+                    <div class="mt-10 text-gray-300">
+                        <p class="mb-2">Or reach us directly:</p>
+                        <a href="mailto:coretick2@gmail.com" class="text-white font-semibold hover:underline">coretick2@gmail.com</a>
+                        <span class="mx-2 text-gray-500">|</span>
+                        <a href="https://wa.me/923213595359" target="_blank" class="text-white font-semibold hover:underline">WhatsApp: +92 321 3595359</a>
+                    </div>
+                </div>
+            </section>
+        </div>
+        
+        <!-- All Products Page (Hidden by default) -->
+        <div id="all-products-page" class="hidden">
+            <section id="all-products" class="py-24 bg-white">
+                <div class="container mx-auto px-6">
+                    <h2 class="text-3xl md:text-4xl font-bold text-center mb-16">
+                        All Watches
+                    </h2>
+                    
+                    <!-- Product Grid -->
+                    <div id="product-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                        <!-- Product cards will be dynamically inserted here by JS -->
+                    </div>
+
+                    <!-- Pagination -->
+                    <nav id="pagination-controls" class="flex justify-center mt-20" aria-label="Pagination">
+                        <!-- Pagination buttons will be dynamically inserted here by JS -->
+                    </nav>
+
+                </div>
+            </section>
+        </div>
+
+        <!-- Return Policy Page (Hidden by default) -->
+        <div id="return-policy-page" class="hidden">
+            <section class="py-24 bg-white">
+                <div class="container mx-auto px-6 policy-page">
+                    <h2>CoreTick Return & Refund Policy</h2>
+                    
+                    <p class="intro">Thank you for shopping with CoreTick!</p>
+                    <p>We value your trust and want you to be completely satisfied with your purchase. Please read our Return & Refund Policy carefully before placing an order.</p>
+
+                    <h3>30-Day Return Warranty</h3>
+                    <p>We offer a 30-day return warranty from the date of delivery on all eligible products.</p>
+                    <p>To qualify for a return or replacement:</p>
+                    <ul>
+                        <li>The product must be unused, in its original packaging, and include all accessories, tags, and manuals.</li>
+                        <li>The return request must be made within 30 days of receiving your order.</li>
+                        <li>Proof of purchase (such as order confirmation or receipt) is required.</li>
+                    </ul>
+
+                    <h3>Open-Box Delivery Policy</h3>
+                    <p>At CoreTick, we provide Open-Box Delivery for your peace of mind.</p>
+                    <p>When your order is delivered:</p>
+                    <ul>
+                        <li>You may inspect the product in front of the delivery agent before accepting it.</li>
+                        <li>Ensure that the item is in perfect condition and matches your order.</li>
+                        <li>Once the product is accepted and the delivery is confirmed, it will be considered successfully delivered.</li>
+                    </ul>
+
+                    <h3>Condition Policy</h3>
+                    <p>We ensure every item is thoroughly checked before dispatch.</p>
+                    <p>However, please note:</p>
+                    <ul>
+                        <li>If the order has visible scratches or damage upon delivery, do not accept the parcel or claim the order.</li>
+                        <li>Kindly inform the delivery agent and contact our support team immediately.</li>
+                        <li>Once the product is accepted and confirmed, scratches, wear, or damage claims will not be eligible for returns or refunds.</li>
+                    </ul>
+
+                    <h3>Non-Returnable Items</h3>
+                    <p>The following items are not eligible for return:</p>
+                    <ul>
+                        <li>Products damaged due to mishandling or misuse after delivery.</li>
+                        <li>Items returned without original packaging, accessories, or documentation.</li>
+                        <li>Custom or special edition watches specifically ordered for the customer.</li>
+                    </ul>
+
+                    <h3>Refund Process</h3>
+                    <p>Once your return is received and inspected, we will notify you by email.</p>
+                    <ul>
+                        <li>If approved, a refund will be processed within 7-10 business days to your original payment method.</li>
+                        <li>Shipping fees, if applicable, are non-refundable.</li>
+                        <li>In case of an exchange, replacement items will be shipped once the returned item passes inspection.</li>
+                    </ul>
+                </div>
+            </section>
+        </div>
+
+        <!-- Shipping Policy Page (Hidden by default) -->
+        <div id="shipping-policy-page" class="hidden">
+            <section class="py-24 bg-white">
+                <div class="container mx-auto px-6 policy-page">
+                    <h2>CoreTick Shipping Policy</h2>
+                    
+                    <p>At CoreTick, we aim to provide a smooth and reliable shopping experience from order to delivery. Please review our shipping terms below.</p>
+
+                    <h3>Free Shipping</h3>
+                    <p>We offer Free Shipping on all orders across Pakistan — no minimum purchase required. There are no hidden charges or extra fees at checkout. Every order you place will be delivered to your doorstep completely free of cost.</p>
+
+                    <h3>Order Processing</h3>
+                    <ul>
+                        <li>Orders are processed within 1–2 business days after payment confirmation.</li>
+                        <li>You will receive an email or SMS notification once your order has been shipped.</li>
+                        <li>Orders placed on weekends or public holidays will be processed the next working day.</li>
+                    </ul>
+
+                    <h3>Estimated Delivery Time</h3>
+                    <ul>
+                        <li>Major Cities: 2–4 business days</li>
+                        <li>Other Areas: 4–7 business days</li>
+                    </ul>
+                    <p class="mt-4">Delivery time may vary slightly depending on your location and courier operations.</p>
+
+
+                    <h3>Tracking Information</h3>
+                    <p>Once your order is shipped, a tracking number will be shared via email or SMS. You can use this tracking ID to monitor your shipment through our courier partner’s website.</p>
+                    
+                    <h3>Open-Box Delivery</h3>
+                    <p>To ensure complete satisfaction, CoreTick provides Open-Box Delivery on selected orders.</p>
+                    <p>When your parcel arrives:</p>
+                    <ul>
+                        <li>You may inspect the product in front of the delivery agent before accepting it.</li>
+                        <li>If the product appears damaged or scratched, do not accept the parcel and inform the delivery agent immediately.</li>
+                        <li>Once the order is accepted, it will be marked as successfully delivered.</li>
+                    </ul>
+
+                    <h3>Delivery Coverage</h3>
+                    <p>Currently, we deliver only within Pakistan.</p>
+                    <p>We are working to expand our services internationally in the future.</p>
+                </div>
+            </section>
+        </div>
+        
+        <!-- --- NEW: Checkout Page (Hidden by default) --- -->
+        <div id="checkout-page" class="hidden">
+            <section class="py-12 bg-white">
+                <div id="checkout-page" class="container mx-auto px-6">
+                    
+                    <!-- Breadcrumb -->
+                    <nav class="text-sm text-gray-500 mb-8" aria-label="Breadcrumb">
+                        <ol class="flex space-x-2">
+                            <li><a href="#" id="checkout-home-link" class="hover:underline">Home</a></li>
+                            <li><span class="mx-2">/</span></li>
+                            <li class="font-medium text-black">Checkout</li>
+                        </ol>
+                    </nav>
+
+                    <div class="flex flex-col lg:flex-row">
+                        <!-- Left Side: Form -->
+                        <!-- MODIFIED: Added id="checkout-form-container" -->
+                        <div id="checkout-form-container" class="w-full lg:w-3/5 lg:pr-12">
+                            <h2 class="text-3xl font-bold mb-6">Checkout</h2>
+                            
+                            <!-- Contact -->
+                            <section class="mb-8">
+                                <h3 class="text-xl font-semibold mb-4 border-b pb-2">Contact</h3>
+                                <!-- MODIFIED: Added id -->
+                                <input type="email" placeholder="Email or mobile phone number" class="checkout-form-input" id="checkout-contact">
+                            </section>
+                            
+                            <!-- Delivery -->
+                            <section class="mb-8">
+                                <h3 class="text-xl font-semibold mb-4 border-b pb-2">Delivery</h3>
+                                <div class="space-y-4">
+                                    <input type="text" value="Pakistan" class="checkout-form-input bg-gray-100" readonly>
+                                    <div class="flex space-x-4">
+                                        <!-- MODIFIED: Added id -->
+                                        <input type="text" placeholder="First name" class="checkout-form-input" id="checkout-firstname">
+                                        <!-- MODIFIED: Added id -->
+                                        <input type="text" placeholder="Last name" class="checkout-form-input" id="checkout-lastname">
+                                    </div>
+                                    <!-- MODIFIED: Added id -->
+                                    <input type="text" placeholder="Address" class="checkout-form-input" id="checkout-address">
+                                    <!-- MODIFIED: Added id -->
+                                    <input type="text" placeholder="Apartment, suite, etc. (optional)" class="checkout-form-input" id="checkout-apartment">
+                                    <div class="flex space-x-4">
+                                        <!-- MODIFIED: Added id -->
+                                        <input type="text" placeholder="City" class="checkout-form-input" id="checkout-city">
+                                        <!-- MODIFIED: Added id -->
+                                        <input type="text" placeholder="Postal code" class="checkout-form-input" id="checkout-postalcode">
+                                    </div>
+                                </div>
+                            </section>
+                            
+                            <!-- Payment -->
+                            <section class="mb-8">
+                                <h3 class="text-xl font-semibold mb-4 border-b pb-2">Payment</h3>
+                                <p class="text-sm text-gray-600 mb-4">All transactions are secure and encrypted.</p>
+                                <div class="border rounded-md">
+                                    <div class="p-4 bg-gray-100 border-b">
+                                        <label class="flex items-center">
+                                            <input type="radio" name="payment" class="mr-3" checked>
+                                            <span class="font-semibold">Cash on Delivery (COD)</span>
+                                        </label>
+                                    </div>
+                                    <div class="p-4 text-center text-gray-500">
+                                        Pay with cash upon delivery.
+                                    </div>
+                                </div>
+                            </section>
+                            
+                            <!-- MODIFIED: Added id -->
+                            <button id="complete-order-btn" class="w-full bg-black text-white font-bold py-4 px-6 rounded-lg hover:bg-gray-800 transition-colors duration-300">
+                                Complete Order
+                            </button>
+
+                        </div>
+                        
+                        <!-- NEW: Checkout Success Message (Hidden by default) -->
+                        <div id="checkout-success-message" class="hidden w-full lg:w-3/5 lg:pr-12 text-center p-8 border rounded-md bg-green-50">
+                            <svg class="w-16 h-16 text-green-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <h3 class="text-2xl font-semibold text-green-800 mt-4">Thank You!</h3>
+                            <p class="text-gray-700 mt-2">Your order has been placed successfully.</p>
+                            <p class="text-gray-600 mt-1">We will contact you shortly to confirm.</p>
+                            <p class="text-sm text-gray-500 mt-6">You will be redirected to the home page in 5 seconds...</p>
+                        </div>
+                        
+                        <!-- Right Side: Order Summary -->
+                        <div class="w-full lg:w-2/5 pt-10 lg:pt-0 checkout-summary">
+                            <div class="p-8 sticky top-24">
+                                <h3 class="text-xl font-semibold mb-6">Order Summary</h3>
+                                <div id="checkout-summary-container" class="max-h-64 overflow-y-auto space-y-4 pr-2">
+                                    <!-- Checkout items will be populated by JS -->
+                                    <p class="text-gray-500">Your cart is empty.</p>
+                                </div>
+                                
+                                <div class="border-t border-gray-300 mt-6 pt-6 space-y-3">
+                                    <div class="flex justify-between text-gray-700">
+                                        <span>Subtotal</span>
+                                        <span id="checkout-subtotal" class="font-semibold">PKR 0.00</span>
+                                    </div>
+                                    <div class="flex justify-between text-gray-700">
+                                        <span>Shipping</span>
+                                        <span class="font-semibold text-green-600">FREE</span>
+                                    </div>
+                                    <div class="flex justify-between text-black text-lg font-bold mt-2">
+                                        <span>Total</span>
+                                        <span id="checkout-total">PKR 0.00</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+        <!-- --- END: Checkout Page --- -->
+
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-400 py-16">
+        <div class="container mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-10">
+            
+            <!-- Footer Column 1: Logo & Socials -->
+            <div>
+                <h3 class="text-2xl font-bold text-white mb-4 uppercase">CoreTick</h3>
+                <p class="text-sm">Timeless watches, timeless style.</p>
+                <div class="flex space-x-4 mt-6">
+                    <!-- Instagram -->
+                    <a href="https://www.instagram.com/core_tick?igsh=c3VqNHBlY3IwanJm" target="_blank" class="hover:text-white" aria-label="Instagram"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.148 3.227-1.665 4.77-4.919 4.919-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-3.252-.148-4.771-1.691-4.919-4.919-.058-1.265-.07-1.646-.07-4.85s.012-3.584.07-4.85c.148-3.227 1.665 4.77 4.919 4.919 1.266-.057 1.646-.07 4.85-.07zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948s.014 3.667.072 4.947c.2 4.358 2.618 6.78 6.98 6.98 1.281.059 1.689.073 4.948.073s3.667-.014 4.947-.072c4.358-.2 6.78-2.618 6.98-6.98.059-1.281.073-1.689.073-4.948s-.014-3.667-.072-4.947c-.2-4.358-2.618-6.78-6.98-6.98-1.281-.059-1.689-.073-4.948-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.162 6.162 6.162 6.162-2.759 6.162-6.162-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4s1.791-4 4-4 4 1.79 4 4-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.44-.645 1.44-1.44s-.645-1.44-1.44-1.44z"/></svg></a>
+                    <!-- TikTok (Corrected SVG) -->
+                    <a href="https://www.tiktok.com/@core_tick?_t=ZS-90s5Zmde4ZE&_r=1" target="_blank" class="hover:text-white" aria-label="TikTok">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M16.6 5.82s.51.5 0 0A4.7 4.7 0 0 1 15.15 8c0 .37-.02.74-.07 1.1H12.9V13.7a5 5 0 0 1-1.5 3.53A4.8 4.8 0 0 1 8 18.7a4.9 4.9 0 0 1-4.2-2.32A5 5 0 0 1 2.3 12a5 5 0 0 1 1.5-3.53A4.8 4.8 0 0 1 7.1 7a5 5 0 0 1 3.32 1.19V3.41h2.11V10.7a2.9 2.9 0 0 0 1.56 2.65 2.8 2.8 0 0 0 3.27-.4A2.9 2.9 0 0 0 18.9 10a5 5 0 0 0-2.3-4.18Z" />
+                        </svg>
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Footer Column 2: Quick Links -->
+            <div>
+                <h4 class="text-lg font-semibold text-white mb-5">Quick Links</h4>
+                <ul class="space-y-3">
+                    <li><a href="#home" id="footer-home-link" class="hover:text-white text-sm transition-colors">Home</a></li>
+                    <li><a href="#shop" id="footer-shop-link" class="hover:text-white text-sm transition-colors">Shop</a></li>
+                    <li><a href="#about" id="footer-about-link" class="hover:text-white text-sm transition-colors">About Us</a></li>
+                </ul>
+            </div>
+            
+            <!-- Footer Column 3: Help -->
+            <div>
+                <h4 class="text-lg font-semibold text-white mb-5">Help</h4>
+                <ul class="space-y-3">
+                    <li><a href="#faq" id="faq-link" class="hover:text-white text-sm transition-colors">FAQs</a></li>
+                    <li><a href="#shipping-policy" id="shipping-policy-link" class="hover:text-white text-sm transition-colors">Shipping Policy</a></li>
+                    <li><a href="#return-policy" id="return-policy-link" class="hover:text-white text-sm transition-colors">Return Policy</a></li>
+                    <li><a href="#" class="hover:text-white text-sm transition-colors">Terms of Service</a></li>
+                </ul>
+            </div>
+
+            <!-- Footer Column 4: Contact -->
+            <div>
+                <h4 class="text-lg font-semibold text-white mb-5">Contact</h4>
+                <p class="text-sm">Email: <a href="mailto:coretick2@gmail.com" class="hover:text-white hover:underline">coretick2@gmail.com</a></p>
+                <p class="text-sm mt-3">WhatsApp: <a href="https://wa.me/923213595359" target="_blank" class="hover:text-white hover:underline">+92 321 3595359</a></p>
+            </div>
+        </div>
+        
+        <!-- Footer Bottom Bar -->
+        <div class="border-t border-gray-700 mt-12 pt-8 text-center">
+            <p class="text-sm">
+                Website Created by <a href="https://www.fiverr.com/s/xXbGZYD" target="_blank" rel="noopener noreferrer" class="font-semibold text-white hover:underline">Rare Service.</a>
+            </p>
+        </div>
+    </footer>
+
+    <!-- --- Quick View Modal --- -->
+    <div id="quick-view-overlay" class="">
+        <!-- Modal Panel -->
+        <!-- MODIFIED: Added data-attributes to store product info -->
+        <div id="quick-view-modal" class="" data-unsubscribe="" data-product-id="" data-title="" data-price="" data-img-src="">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-4 border-b border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-800">Quick View</h2>
+                <button id="quick-view-close" class="text-gray-500 hover:text-gray-800" aria-label="Close modal">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Body -->
+            <div class="flex-grow overflow-y-auto p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Image Gallery (Simplified) -->
+                    <div class="">
+                        <img id="quick-view-img" src="https://placehold.co/600x600/f3f4f6/111111?text=Watch+Model&font=inter" alt="Product Image" class="w-full h-auto object-cover rounded-lg shadow-md">
+                        <!-- Thumbnails could go here -->
+                    </div>
+                    
+                    <!-- Product Details -->
+                    <div class="flex flex-col">
+                        <h2 id="quick-view-title" class="text-2xl font-bold mb-2">Product Title Here</h2>
+                        <!-- MODIFIED: Added original price span -->
+                        <div class="mb-4">
+                            <span id="quick-view-price" class="text-3xl font-semibold text-red-600">PKR 0.00</span>
+                            <span id="quick-view-original-price" class="text-xl text-gray-500 line-through ml-3 hidden">PKR 0.00</span>
+                        </div>
+                        
+                        <!-- NEW: Countdown Timer (from video) -->
+                        <div class="border-t border-gray-200 pt-4 my-4">
+                            <h4 class="text-sm font-semibold text-center uppercase text-red-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block -mt-1" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.414-1.414L11 10.586V6z" clip-rule="evenodd" />
+                                </svg>
+                                HURRY UP! SALE ENDS IN
+                            </h4>
+                            <div id="qv-countdown" class="flex justify-center items-center space-x-3 text-center mt-3">
+                                <div>
+                                    <span id="qv-countdown-days" class="text-2xl font-bold text-black">00</span>
+                                    <span class="text-xs text-gray-500 block">DAYS</span>
+                                </div>
+                                <span class="text-2xl font-bold">:</span>
+                                <div>
+                                    <span id="qv-countdown-hours" class="text-2xl font-bold text-black">00</span>
+                                    <span class="text-xs text-gray-500 block">HOURS</span>
+                                </div>
+                                <span class="text-2xl font-bold">:</span>
+                                <div>
+                                    <span id="qv-countdown-mins" class="text-2xl font-bold text-black">00</span>
+                                    <span class="text-xs text-gray-500 block">MINS</span>
+                                </div>
+                                <span class="text-2xl font-bold">:</span>
+                                <div>
+                                    <span id="qv-countdown-secs" class="text-2xl font-bold text-black">00</span>
+                                    <span class="text-xs text-gray-500 block">SECS</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Stock & Social Proof -->
+                        <div class="border-t border-gray-200 py-4 my-4 space-y-3">
+                            <div>
+                                <p class="text-sm font-semibold text-red-600 uppercase" id="quick-view-stock-message">
+                                    HURRY! ONLY 18 LEFT IN STOCK.
+                                </p>
+                                <div class="stock-progress-bar mt-1.5">
+                                    <div id="quick-view-stock-bar" class="stock-progress-bar-inner" style="width: 25%;"></div>
+                                </div>
+                            </div>
+                            <p class="text-sm text-gray-700" id="quick-view-viewers">
+                                <span class="font-bold text-black">20</span> People are viewing this right now
+                            </p>
+                            <p class="text-sm text-gray-700" id="quick-view-sold">
+                                <span class="font-bold text-black">25</span> sold in last 20 hours
+                            </p>
+                            <!-- NEW: Delivery Estimate (from video) -->
+                            <p class="text-sm text-gray-700 border-t pt-3 mt-3" id="quick-view-delivery">
+                                Order in the next <span class="font-bold text-black">...</span> to get it between <span class="font-bold text-black">...</span>
+                            </p>
+                        </div>
+                        
+                        <!-- Quantity Selector -->
+                        <div class="mb-6">
+                            <label for="quick-view-quantity" class="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+                            <div class="flex items-center">
+                                <button id="qv-qty-decrease" class="px-3 py-1.5 border border-gray-300 rounded-l-md hover:bg-gray-100">-</button>
+                                <input id="quick-view-quantity" type="text" value="1" class="w-12 text-center border-t border-b border-gray-300 py-1.5" readonly>
+                                <button id="qv-qty-increase" class="px-3 py-1.5 border border-gray-300 rounded-r-md hover:bg-gray-100">+</button>
+                            </div>
+                        </div>
+                        
+                        <!-- MODIFIED: Add to Cart button ID -->
+                        <button id="qv-add-to-cart-btn" class="w-full bg-black text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-800 transition-colors duration-300">
+                            Add to Cart
+                        </button>
+                        
+                        <!-- View full details link -->
+                        <a href="#" class="text-center text-sm text-gray-600 hover:text-black mt-4 underline">
+                            View full details
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- --- End Quick View Modal --- -->
+
+
+    <!-- --- NEW: Shopping Cart Modal --- -->
+    <div id="shopping-cart-modal" class="" data-unsubscribe="">
+        <!-- Header -->
+        <div class="flex justify-between items-center p-4 border-b border-gray-200">
+            <h2 class="text-xl font-semibold text-gray-800">Shopping Cart</h2>
+            <button id="shopping-cart-close" class="text-gray-500 hover:text-gray-800" aria-label="Close modal">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        
+        <!-- Body (Cart Items) -->
+        <div id="cart-items-container" class="flex-grow overflow-y-auto p-6 divide-y divide-gray-200">
+            <!-- Cart items will be dynamically inserted here by JS -->
+            <p class="text-gray-500 text-center py-10">Your cart is empty.</p>
+        </div>
+        
+        <!-- Footer (Upsell & Checkout) -->
+        <div id="shopping-cart-footer" class="p-6">
+            
+            <!-- Frequently Bought Together (Static) -->
+            <div class="mb-4">
+                <h4 class="font-semibold text-lg mb-3">Frequently Bought Together</h4>
+                <div class="flex items-center space-x-4 p-3 border rounded-lg">
+                    <input id="upsell-checkbox" type="checkbox" class="h-5 w-5 text-black border-gray-300 rounded focus:ring-black">
+                    <img src="https://placehold.co/80x80/f3f4f6/111111?text=Upsell+Watch&font=inter" alt="Upsell" class="w-20 h-20 object-cover rounded-md">
+                    <div class="flex-grow">
+                        <p class="font-semibold">Silver Elegance</p>
+                        <p>
+                            <span class="font-bold text-red-600">PKR 4,750.00</span>
+                            <span class="text-sm text-gray-500 line-through ml-2">PKR 9,499.00</span>
+                        </p>
+                    </div>
+                    <!-- Hidden data for JS -->
+                    <span id="upsell-data" data-product-id="silver-elegance-upsell" data-title="Silver Elegance" data-price="4750.00" data-img-src="https://placehold.co/80x80/f3f4f6/111111?text=Upsell+Watch&font=inter"></span>
+                </div>
+            </div>
+            
+            <!-- Subtotal -->
+            <div class="flex justify-between items-center text-xl font-bold my-4">
+                <span>Subtotal:</span>
+                <span id="cart-subtotal">PKR 0.00</span>
+            </div>
+            
+            <!-- Terms & Conditions -->
+            <p class="text-xs text-gray-500 mb-2">Taxes, shipping and discounts calculated at checkout.</p>
+            <div class="flex items-center mb-4">
+                <input id="cart-terms-checkbox" type="checkbox" class="h-4 w-4 text-black border-gray-300 rounded focus:ring-black">
+                <label for="cart-terms-checkbox" class="ml-2 text-sm text-gray-700">I agree with the <a href="#" class="underline">terms and conditions</a></label>
+            </div>
+            
+            <!-- Buttons -->
+            <a href="#" id="view-cart-link" class="block text-center w-full bg-white text-black border border-gray-300 font-bold py-3 px-6 rounded-lg hover:bg-gray-100 transition-colors duration-300 mb-3">
+                View Cart
+            </a>
+            <button id="cart-checkout-btn" class="w-full bg-black text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-800 transition-colors duration-300 disabled:opacity-50" disabled>
+                Check Out
+            </button>
+        </div>
+    </div>
+    <!-- --- End Shopping Cart Modal --- -->
+
+
+    <!-- Scripts -->
+    
+    <!-- Mobile Menu Script -->
+    <script>
+        document.getElementById('menu-btn').addEventListener('click', function() {
+            var mobileMenu = document.getElementById('mobile-menu');
+            if (mobileMenu.classList.contains('hidden')) {
+                mobileMenu.classList.remove('hidden');
+            } else {
+                mobileMenu.classList.add('hidden');
+            }
+        });
+    </script>
+    
+    <!-- Page Navigation Script -->
+    <script>
+        const mainContent = document.getElementById('main-content');
+        const allProductsPage = document.getElementById('all-products-page');
+        const returnPolicyPage = document.getElementById('return-policy-page');
+        const shippingPolicyPage = document.getElementById('shipping-policy-page');
+        const checkoutPage = document.getElementById('checkout-page'); // NEW
+        const mobileMenu = document.getElementById('mobile-menu');
+
+        function showPage(pageName) {
+            // Hide all pages
+            mainContent.classList.add('hidden');
+            allProductsPage.classList.add('hidden');
+            returnPolicyPage.classList.add('hidden');
+            shippingPolicyPage.classList.add('hidden');
+            checkoutPage.classList.add('hidden'); // NEW
+            
+            // Close mobile menu if open
+            mobileMenu.classList.add('hidden');
+            
+            // Hide modals
+            if (window.closeQuickView) window.closeQuickView();
+            if (window.closeCart) window.closeCart();
+
+            // Show the requested page
+            if (pageName === 'home') {
+                mainContent.classList.remove('hidden');
+                // Scroll to top or specific section
+                window.scrollTo(0, 0); 
+            } else if (pageName === 'shop') {
+                allProductsPage.classList.remove('hidden');
+                window.scrollTo(0, 0);
+            } else if (pageName === 'about') {
+                mainContent.classList.remove('hidden');
+                // Scroll to the 'about' section
+                document.getElementById('about').scrollIntoView({ behavior: 'smooth' });
+            } else if (pageName === 'contact') {
+                mainContent.classList.remove('hidden');
+                // Scroll to the 'contact' section
+                document.getElementById('contact').scrollIntoView({ behavior: 'smooth' });
+            } else if (pageName === 'faq') {
+                mainContent.classList.remove('hidden');
+                // Scroll to the 'faq' section
+                document.getElementById('faq').scrollIntoView({ behavior: 'smooth' });
+            } else if (pageName === 'return-policy') {
+                returnPolicyPage.classList.remove('hidden');
+                window.scrollTo(0, 0);
+            } else if (pageName === 'shipping-policy') {
+                shippingPolicyPage.classList.remove('hidden');
+                window.scrollTo(0, 0);
+            } else if (pageName === 'checkout') { // NEW
+                checkoutPage.classList.remove('hidden');
+                window.scrollTo(0, 0);
+            }
+        }
+
+        // --- Event Listeners ---
+        
+        // Header Links
+        document.getElementById('home-link-logo').addEventListener('click', function(e) { e.preventDefault(); showPage('home'); });
+        document.getElementById('home-link').addEventListener('click', function(e) { e.preventDefault(); showPage('home'); });
+        document.getElementById('shop-link').addEventListener('click', function(e) { e.preventDefault(); showPage('shop'); });
+        document.getElementById('about-link').addEventListener('click', function(e) { e.preventDefault(); showPage('about'); });
+        document.getElementById('contact-link').addEventListener('click', function(e) { e.preventDefault(); showPage('contact'); });
+
+        // Hero Button
+        document.getElementById('shop-link-hero').addEventListener('click', function(e) { e.preventDefault(); showPage('shop'); });
+        
+        // "View More" Button
+        document.getElementById('view-more-btn').addEventListener('click', function(e) { e.preventDefault(); showPage('shop'); });
+
+        // Mobile Menu Links
+        document.getElementById('mobile-home-link').addEventListener('click', function(e) { e.preventDefault(); showPage('home'); });
+        document.getElementById('mobile-shop-link').addEventListener('click', function(e) { e.preventDefault(); showPage('shop'); });
+        document.getElementById('mobile-about-link').addEventListener('click', function(e) { e.preventDefault(); showPage('about'); });
+        document.getElementById('mobile-contact-link').addEventListener('click', function(e) { e.preventDefault(); showPage('contact'); });
+        
+        // Footer Links
+        document.getElementById('footer-home-link').addEventListener('click', function(e) { e.preventDefault(); showPage('home'); });
+        document.getElementById('footer-shop-link').addEventListener('click', function(e) { e.preventDefault(); showPage('shop'); });
+        document.getElementById('footer-about-link').addEventListener('click', function(e) { e.preventDefault(); showPage('about'); });
+        document.getElementById('faq-link').addEventListener('click', function(e) { e.preventDefault(); showPage('faq'); });
+        document.getElementById('return-policy-link').addEventListener('click', function(e) { e.preventDefault(); showPage('return-policy'); });
+        document.getElementById('shipping-policy-link').addEventListener('click', function(e) { e.preventDefault(); showPage('shipping-policy'); });
+        
+        // NEW: Checkout Home Link
+        document.getElementById('checkout-home-link').addEventListener('click', function(e) { e.preventDefault(); showPage('home'); });
+    </script>
+    
+    <!-- --- Pagination Script --- -->
+    <script>
+        const productGrid = document.getElementById('product-grid');
+        const paginationControls = document.getElementById('pagination-controls');
+        const productsPerPage = 8;
+        const totalPages = 10;
+        let currentPage = 1;
+
+        const productNames = [
+            "Classic Chronograph", "Minimalist Black", "Silver Elegance", "Gold Edition",
+            "Modern Digital", "Leather Strap", "Rose Gold", "Titanium Pro",
+            "Midnight Blue", "Forest Green", "Arctic White", "Urban Steel"
+        ];
+        
+        // MODIFIED: Added original prices (some are null)
+        const productPrices = [
+            "3,200.00", "4,999.00", "4,750.00", "9,999.00", "3,499.00", "5,999.00", "8,499.00", "9,799.00",
+            "7,899.00", "6,299.00", "5,499.00", "9,199.00"
+        ];
+        const productOriginalPrices = [
+            "5,999.00", null, "9,499.00", null, null, "7,999.00", "10,999.00", null,
+            "9,899.00", null, null, "11,199.00"
+        ];
+
+        // Function to update the product grid for the current page
+        function updateProductGrid(pageNumber) {
+            currentPage = pageNumber;
+            productGrid.innerHTML = ''; // Clear existing products
+            
+            // This is a simulation, so we'll just show 8 products
+            // and vary their names based on the page number.
+            for (let i = 0; i < productsPerPage; i++) {
+                // Get a product name, wrapping around the array if needed
+                const nameIndex = (i) % productNames.length;
+                
+                const productName = `${productNames[nameIndex]} - P${pageNumber}`;
+                const productPrice = productPrices[nameIndex];
+                const productOriginalPrice = productOriginalPrices[nameIndex];
+                
+                const placeholderImageText = `Watch+Model+${i+1}+P${pageNumber}`;
+                const placeholderImageText2 = `Watch+${i+1}+P${pageNumber}+View+2`;
+                
+                // Create a product ID
+                const productId = `${productNames[nameIndex].toLowerCase().replace(/ /g, '-')}-p${pageNumber}`;
+                
+                // MODIFIED: Create price HTML based on if original price exists
+                let priceHTML = '';
+                if (productOriginalPrice) {
+                    priceHTML = `
+                    <p class="text-lg text-gray-800 font-bold mb-4">
+                        <span class="product-price text-red-600">PKR ${productPrice}</span>
+                        <span class="product-original-price text-sm text-gray-500 line-through ml-2">PKR ${productOriginalPrice}</span>
+                    </p>`;
+                } else {
+                    priceHTML = `
+                    <p class="text-lg text-gray-800 font-bold mb-4">
+                        <span class="product-price text-gray-800">PKR ${productPrice}</span>
+                        <span class="product-original-price hidden"></span>
+                    </p>`;
+                }
+
+
+                const productCardHTML = `
+                <div class="product-card bg-gray-50 border border-gray-200 rounded-lg shadow-lg overflow-hidden transition-all duration-300 group hover:shadow-2xl hover:-translate-y-2 animate-fadeInUp" data-product-id="${productId}">
+                    <div class="image-container overflow-hidden h-72">
+                        <!-- Main Image -->
+                        <img src="https://placehold.co/600x600/f3f4f6/111111?text=${placeholderImageText}&font=inter" 
+                             alt="${productName}" 
+                             class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 img-primary">
+                        <!-- Secondary Image (on hover) -->
+                        <img src="https://placehold.co/600x600/e0e0e0/333333?text=${placeholderImageText2}&font=inter" 
+                             alt="${productName} alternate view" 
+                             class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 img-secondary">
+                        
+                        <!-- Wishlist Icon -->
+                        <button class="wishlist-icon bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition-colors" aria-label="Add to Wishlist">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
+                            </svg>
+                        </button>
+                        
+                        <!-- Hover Overlay Buttons -->
+                        <div class="hover-overlay">
+                            <a href="#" class="quick-view-btn w-full bg-white text-black text-center py-2.5 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors duration-300">
+                                Quick View
+                            </a>
+                            <a href="#" class="add-to-cart-btn w-full bg-black text-white text-center py-2.5 px-4 rounded-lg font-semibold hover:bg-gray-800 transition-colors duration-300">
+                                Add to Cart
+                            </a>
+                        </div>
+                    </div>
+                    <div class="p-6 text-center">
+                        <h3 class="product-title text-xl font-semibold mb-2">${productName}</h3>
+                        ${priceHTML}
+                    </div>
+                </div>`;
+                productGrid.innerHTML += productCardHTML;
+            }
+        }
+
+        // Function to update the pagination buttons UI
+        function updatePaginationUI(activePage) {
+            paginationControls.innerHTML = ''; // Clear existing buttons
+            let paginationHTML = '<ul class="flex items-center -space-x-px h-10 text-base">';
+
+            // Previous Button
+            paginationHTML += `
+            <li>
+                <a href="#" data-page="${activePage > 1 ? activePage - 1 : 1}" class="flex items-center justify-center px-4 h-10 ms-0 leading-tight text-gray-500 bg-white border border-e-0 border-gray-300 rounded-s-lg hover:bg-gray-100 hover:text-gray-700 ${activePage === 1 ? 'pointer-events-none opacity-50' : ''}">
+                    <span class="sr-only">Previous</span>
+                    <svg class="w-3 h-3 rtl:rotate-180" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 6 10">
+                        <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 1 1 5l4 4"/>
+                    </svg>
+                </a>
+            </li>`;
+
+            // Page Number Buttons
+            // Logic to show first, last, current, and surrounding pages
+            const pagesToShow = [];
+            if (totalPages <= 7) {
+                // Show all pages
+                for (let i = 1; i <= totalPages; i++) pagesToShow.push(i);
+            } else {
+                // Show with ellipsis
+                pagesToShow.push(1);
+                if (activePage > 3) pagesToShow.push('...');
+                
+                if (activePage <= 3) {
+                    pagesToShow.push(2, 3);
+                } else if (activePage >= totalPages - 2) {
+                    pagesToShow.push(totalPages - 2, totalPages - 1);
+                } else {
+                    pagesToShow.push(activePage - 1, activePage, activePage + 1);
+                }
+                
+                if (activePage < totalPages - 2) pagesToShow.push('...');
+                pagesToShow.push(totalPages);
+            }
+            
+            // De-duplicate array (for '...')
+            const uniquePages = [...new Set(pagesToShow)];
+
+            uniquePages.forEach(page => {
+                if (page === '...') {
+                    paginationHTML += `
+                    <li>
+                        <span class="flex items-center justify-center px-4 h-10 leading-tight text-gray-500 bg-white border border-gray-300">...</span>
+                    </li>`;
+                } else {
+                    const isActive = (page === activePage);
+                    const classes = isActive ? 'pagination-active' : 'pagination-inactive';
+                    paginationHTML += `
+                    <li>
+                        <a href="#" data-page="${page}" class="flex items-center justify-center px-4 h-10 leading-tight border ${classes}">${page}</a>
+                    </li>`;
+                }
+            });
+
+            // Next Button
+            paginationHTML += `
+            <li>
+                <a href="#" data-page="${activePage < totalPages ? activePage + 1 : totalPages}" class="flex items-center justify-center px-4 h-10 leading-tight text-gray-500 bg-white border border-gray-300 rounded-e-lg hover:bg-gray-100 hover:text-gray-700 ${activePage === totalPages ? 'pointer-events-none opacity-50' : ''}">
+                    <span class="sr-only">Next</span>
+                    <svg class="w-3 h-3 rtl:rotate-180" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 6 10">
+                        <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 9 4-4-4-4"/>
+                    </svg>
+                </a>
+            </li>`;
+            
+            paginationHTML += '</ul>';
+            paginationControls.innerHTML = paginationHTML;
+        }
+
+        // Event listener for pagination clicks
+        paginationControls.addEventListener('click', function(e) {
+            e.preventDefault();
+            const target = e.target.closest('a'); // Find the clicked link
+            
+            if (target && target.dataset.page) {
+                const pageNumber = parseInt(target.dataset.page, 10);
+                if (pageNumber !== currentPage) {
+                    updateProductGrid(pageNumber);
+                    updatePaginationUI(pageNumber);
+                    // Scroll to top of product grid
+                    document.getElementById('all-products').scrollIntoView({ behavior: 'smooth' });
+                }
+            }
+        });
+
+        // Initial load
+        updateProductGrid(1);
+        updatePaginationUI(1);
+    </script>
+    
+    <!-- --- FAQ Accordion Script --- -->
+    <script>
+        const faqItems = document.querySelectorAll('.faq-item');
+
+        faqItems.forEach(item => {
+            const toggle = item.querySelector('.faq-toggle');
+            const answer = item.querySelector('.faq-answer');
+            const icon = item.querySelector('.faq-icon svg');
+            const iconContainer = item.querySelector('.faq-icon');
+
+            toggle.addEventListener('click', () => {
+                const isOpen = item.classList.contains('active');
+
+                // Close all other items
+                faqItems.forEach(otherItem => {
+                    otherItem.classList.remove('active');
+                    // Reset icon
+                    otherItem.querySelector('.faq-icon').innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>'; // Reset to +
+                });
+
+                // If this item was not already open, open it
+                if (!isOpen) {
+                    item.classList.add('active');
+                    // Change to -
+                    iconContainer.innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"></path></svg>';
+                }
+            });
+        });
+    </script>
+
+    <!-- --- Quick View Modal Script --- -->
+    <script id="quick-view-script">
+        const qvOverlay = document.getElementById('quick-view-overlay');
+        const qvModal = document.getElementById('quick-view-modal');
+        const qvCloseBtn = document.getElementById('quick-view-close');
+        
+        const qvQtyInput = document.getElementById('quick-view-quantity');
+        const qvQtyIncrease = document.getElementById('qv-qty-increase');
+        const qvQtyDecrease = document.getElementById('qv-qty-decrease');
+
+        // This function is now just for closing
+        // Made global so cart can call it
+        window.closeQuickView = function() {
+            qvOverlay.classList.remove('active');
+            qvModal.classList.remove('active');
+            document.body.classList.remove('no-scroll');
+            
+            // Stop listening to Firestore updates when modal is closed
+            const unsubscribe = qvModal.dataset.unsubscribe;
+            if (typeof unsubscribe === 'function') {
+                unsubscribe(); // Call the function to detach the listener
+                qvModal.dataset.unsubscribe = ''; // Clear it
+                console.log("Unsubscribed from Firestore snapshot.");
+            }
+            
+            // Stop countdown
+            if(window.stopCountdown) {
+                window.stopCountdown('qv-countdown');
+            }
+        }
+
+        // Event Delegation for all "Quick View" buttons
+        document.body.addEventListener('click', function(e) {
+            const quickViewBtn = e.target.closest('.quick-view-btn');
+            
+            if (quickViewBtn) {
+                e.preventDefault();
+                const productCard = quickViewBtn.closest('.product-card');
+                if (productCard) {
+                    // Call the new global function from the other script
+                    if (typeof window.openQuickView === 'function') {
+                        window.openQuickView(productCard);
+                    } else {
+                        console.error("openQuickView function is not defined. Firebase script might have failed.");
+                        // Fallback to old random behavior
+                        // (You could copy the old random function here as a backup)
+                    }
+                }
+            }
+        });
+
+        // Close button and overlay click
+        qvCloseBtn.addEventListener('click', window.closeQuickView);
+        qvOverlay.addEventListener('click', function(e) {
+            if (e.target === qvOverlay) {
+                window.closeQuickView();
+                if(window.closeCart) window.closeCart(); // Also close cart if open
+            }
+        });
+
+        // Quantity controls
+        qvQtyIncrease.addEventListener('click', () => {
+            let qty = parseInt(qvQtyInput.value, 10);
+            qty++;
+            qvQtyInput.value = qty;
+        });
+
+        qvQtyDecrease.addEventListener('click', () => {
+            let qty = parseInt(qvQtyInput.value, 10);
+            if (qty > 1) {
+                qty--;
+                qvQtyInput.value = qty;
+            }
+        });
+    </script>
+    
+    <!-- --- NEW: Shopping Cart & Countdown Script --- -->
+    <script id="shopping-cart-script">
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            let shoppingCart = [];
+            let countdownIntervals = {};
+            
+            // --- Element Selectors ---
+            const cartModal = document.getElementById('shopping-cart-modal');
+            const cartCloseBtn = document.getElementById('shopping-cart-close');
+            const cartItemsContainer = document.getElementById('cart-items-container');
+            const cartSubtotalEl = document.getElementById('cart-subtotal');
+            const cartCheckoutBtn = document.getElementById('cart-checkout-btn');
+            const cartTermsCheckbox = document.getElementById('cart-terms-checkbox');
+            const openCartBtnHeader = document.getElementById('open-cart-btn-header');
+            
+            const qvAddToCartBtn = document.getElementById('qv-add-to-cart-btn');
+            
+            const upsellCheckbox = document.getElementById('upsell-checkbox');
+            const upsellData = document.getElementById('upsell-data');
+            
+            const checkoutSummaryContainer = document.getElementById('checkout-summary-container');
+            const checkoutSubtotalEl = document.getElementById('checkout-subtotal');
+            const checkoutTotalEl = document.getElementById('checkout-total');
+            
+            // NEW: Checkout form elements
+            const completeOrderBtn = document.getElementById('complete-order-btn');
+            const checkoutFormContainer = document.getElementById('checkout-form-container');
+            const checkoutSuccessMessage = document.getElementById('checkout-success-message');
+            
+            // --- Helper Functions ---
+            
+            /**
+             * Formats a number as PKR currency
+             * @param {number} amount - The amount to format
+             * @returns {string} - Formatted currency string
+             */
+            function formatCurrency(amount) {
+                return `PKR ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            }
+            
+            /**
+             * Parses a currency string (e.g., "PKR 3,200.00") into a number
+             * @param {string} text - The currency string
+             * @returns {number} - The parsed number
+             */
+            function parsePrice(text) {
+                if (!text) return 0;
+                return parseFloat(text.replace(/[^0-9.]/g, '')) || 0;
+            }
+
+            // --- Cart Modal Functions ---
+            
+            /**
+             * Opens the shopping cart modal
+             */
+            window.openCart = function() {
+                qvOverlay.classList.add('active'); // Reuse quick view overlay
+                cartModal.classList.add('active');
+                document.body.classList.add('no-scroll');
+            }
+            
+            /**
+             * Closes the shopping cart modal
+             */
+            window.closeCart = function() {
+                qvOverlay.classList.remove('active');
+                cartModal.classList.remove('active');
+                if (!qvModal.classList.contains('active')) {
+                     document.body.classList.remove('no-scroll');
+                }
+            }
+            
+            // --- Cart Logic Functions ---
+
+            /**
+             * Adds an item to the cart or updates its quantity
+             * @param {string} id - Product ID
+             * @param {string} title - Product title
+             * @param {number} price - Product price (number)
+             * @param {string} imgSrc - Product image source
+             * @param {number} quantity - Quantity to add
+             */
+            function addToCart(id, title, price, imgSrc, quantity) {
+                const existingItem = shoppingCart.find(item => item.id === id);
+                
+                if (existingItem) {
+                    existingItem.quantity += quantity;
+                } else {
+                    shoppingCart.push({ id, title, price, imgSrc, quantity });
+                }
+                
+                updateCartView();
+            }
+
+            /**
+             * Updates the quantity of an item in the cart
+             * @param {string} id - Product ID
+             * @param {number} quantity - The new quantity
+             */
+            function updateCartQuantity(id, quantity) {
+                const item = shoppingCart.find(item => item.id === id);
+                if (item) {
+                    if (quantity > 0) {
+                        item.quantity = quantity;
+                    } else {
+                        // Remove item if quantity is 0 or less
+                        removeFromCart(id);
+                    }
+                }
+                updateCartView();
+            }
+
+            /**
+             * Removes an item from the cart
+             * @param {string} id - Product ID
+             */
+            function removeFromCart(id) {
+                shoppingCart = shoppingCart.filter(item => item.id !== id);
+                
+                // Check if it was the upsell item
+                if (id === upsellData.dataset.productId) {
+                    upsellCheckbox.checked = false;
+                }
+                
+                updateCartView();
+            }
+
+            /**
+             * Redraws the entire cart modal and checkout summary
+             */
+            function updateCartView() {
+                let subtotal = 0;
+                
+                if (shoppingCart.length === 0) {
+                    cartItemsContainer.innerHTML = '<p class="text-gray-500 text-center py-10">Your cart is empty.</p>';
+                    checkoutSummaryContainer.innerHTML = '<p class="text-gray-500">Your cart is empty.</p>';
+                } else {
+                    cartItemsContainer.innerHTML = '';
+                    checkoutSummaryContainer.innerHTML = '';
+                    
+                    shoppingCart.forEach(item => {
+                        const itemTotal = item.price * item.quantity;
+                        subtotal += itemTotal;
+                        
+                        // HTML for Cart Modal
+                        const cartItemHTML = `
+                        <div class="flex items-center space-x-4 py-4" data-product-id="${item.id}">
+                            <img src="${item.imgSrc}" alt="${item.title}" class="w-20 h-20 object-cover rounded-md border">
+                            <div class="flex-grow">
+                                <p class="font-semibold text-sm">${item.title}</p>
+                                <p class="text-xs text-gray-500">${formatCurrency(item.price)}</p>
+                                <div class="flex items-center mt-2">
+                                    <button class="cart-qty-decrease px-2 py-0.5 border border-gray-300 rounded-l-md hover:bg-gray-100" data-id="${item.id}">-</button>
+                                    <input type="text" value="${item.quantity}" class="w-10 text-center border-t border-b border-gray-300 py-0.5" readonly>
+                                    <button class="cart-qty-increase px-2 py-0.5 border border-gray-300 rounded-r-md hover:bg-gray-100" data-id="${item.id}">+</button>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-semibold">${formatCurrency(itemTotal)}</p>
+                                <button class="cart-remove-btn text-xs text-red-500 hover:underline" data-id="${item.id}">Remove</button>
+                            </div>
+                        </div>`;
+                        cartItemsContainer.innerHTML += cartItemHTML;
+                        
+                        // HTML for Checkout Summary
+                        const checkoutItemHTML = `
+                        <div class="flex items-center space-x-4">
+                            <div class="relative">
+                                <img src="${item.imgSrc}" alt="${item.title}" class="w-16 h-16 object-cover rounded-md border">
+                                <span class="absolute -top-2 -right-2 bg-gray-700 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full">${item.quantity}</span>
+                            </div>
+                            <div class="flex-grow">
+                                <p class="font-semibold text-sm">${item.title}</p>
+                            </div>
+                            <span class="font-medium text-sm">${formatCurrency(itemTotal)}</span>
+                        </div>`;
+                        checkoutSummaryContainer.innerHTML += checkoutItemHTML;
+                    });
+                }
+                
+                // Update Subtotals
+                cartSubtotalEl.textContent = formatCurrency(subtotal);
+                checkoutSubtotalEl.textContent = formatCurrency(subtotal);
+                checkoutTotalEl.textContent = formatCurrency(subtotal); // Assuming shipping is free
+                
+                // NEW: Disable checkout button if cart is empty
+                if (shoppingCart.length === 0) {
+                    cartCheckoutBtn.disabled = true;
+                    cartTermsCheckbox.checked = false;
+                }
+            }
+            
+            // --- Countdown Timer Functions ---
+            
+            /**
+             * Starts a countdown timer
+             * @param {number} endTime - The timestamp when the countdown ends
+             * @param {string} idPrefix - The prefix for the DOM element IDs (e.g., "qv-countdown")
+             */
+            window.startCountdown = function(endTime, idPrefix) {
+                // Stop existing timer for this prefix if it's running
+                window.stopCountdown(idPrefix);
+
+                const daysEl = document.getElementById(`${idPrefix}-days`);
+                const hoursEl = document.getElementById(`${idPrefix}-hours`);
+                const minsEl = document.getElementById(`${idPrefix}-mins`);
+                const secsEl = document.getElementById(`${idPrefix}-secs`);
+
+                function updateTimer() {
+                    const now = new Date().getTime();
+                    const distance = endTime - now;
+
+                    if (distance < 0) {
+                        window.stopCountdown(idPrefix);
+                        daysEl.textContent = '00';
+                        hoursEl.textContent = '00';
+                        minsEl.textContent = '00';
+                        secsEl.textContent = '00';
+                        return;
+                    }
+
+                    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                    daysEl.textContent = String(days).padStart(2, '0');
+                    hoursEl.textContent = String(hours).padStart(2, '0');
+                    minsEl.textContent = String(minutes).padStart(2, '0');
+                    secsEl.textContent = String(seconds).padStart(2, '0');
+                }
+                
+                updateTimer(); // Run once immediately
+                countdownIntervals[idPrefix] = setInterval(updateTimer, 1000);
+            }
+            
+            /**
+             * Stops a countdown timer
+             * @param {string} idPrefix - The prefix of the timer to stop
+             */
+            window.stopCountdown = function(idPrefix) {
+                 if (countdownIntervals[idPrefix]) {
+                    clearInterval(countdownIntervals[idPrefix]);
+                    delete countdownIntervals[idPrefix];
+                }
+            }
+
+            // --- Event Listeners ---
+            
+            // Close Cart
+            cartCloseBtn.addEventListener('click', window.closeCart);
+            
+            // Open Cart (from header)
+            openCartBtnHeader.addEventListener('click', () => {
+                updateCartView(); // Ensure it's up-to-date
+                window.openCart();
+            });
+            
+            // Add to Cart (from Quick View)
+            qvAddToCartBtn.addEventListener('click', () => {
+                const modal = document.getElementById('quick-view-modal');
+                const id = modal.dataset.productId;
+                const title = modal.dataset.title;
+                const price = parsePrice(modal.dataset.price);
+                const imgSrc = modal.dataset.imgSrc;
+                const quantity = parseInt(document.getElementById('quick-view-quantity').value, 10) || 1;
+                
+                addToCart(id, title, price, imgSrc, quantity);
+                window.closeQuickView();
+                window.openCart();
+            });
+            
+            // Add to Cart (from Product Cards - Event Delegation)
+            document.body.addEventListener('click', function(e) {
+                const addToCartBtn = e.target.closest('.add-to-cart-btn');
+                if (addToCartBtn) {
+                    e.preventDefault();
+                    const card = addToCartBtn.closest('.product-card');
+                    if (card) {
+                        const id = card.dataset.productId;
+                        const title = card.querySelector('.product-title').textContent;
+                        const price = parsePrice(card.querySelector('.product-price').textContent);
+                        const imgSrc = card.querySelector('.img-primary').src;
+                        
+                        addToCart(id, title, price, imgSrc, 1); // Add 1 by default from card
+                        window.openCart();
+                    }
+                }
+            });
+            
+            // Cart Item Interactions (Quantity & Remove - Event Delegation)
+            cartItemsContainer.addEventListener('click', (e) => {
+                const target = e.target;
+                const id = target.dataset.id;
+                if (!id) return;
+                
+                const item = shoppingCart.find(i => i.id === id);
+                if (!item) return;
+                
+                if (target.classList.contains('cart-qty-increase')) {
+                    updateCartQuantity(id, item.quantity + 1);
+                }
+                else if (target.classList.contains('cart-qty-decrease')) {
+                    updateCartQuantity(id, item.quantity - 1);
+                }
+                else if (target.classList.contains('cart-remove-btn')) {
+                    removeFromCart(id);
+                }
+            });
+            
+            // Cart Terms Checkbox
+            cartTermsCheckbox.addEventListener('change', () => {
+                cartCheckoutBtn.disabled = !cartTermsCheckbox.checked;
+            });
+            
+            // Upsell Checkbox
+            upsellCheckbox.addEventListener('change', () => {
+                const id = upsellData.dataset.productId;
+                if (upsellCheckbox.checked) {
+                    // Add upsell item
+                    const title = upsellData.dataset.title;
+                    const price = parseFloat(upsellData.dataset.price);
+                    const imgSrc = upsellData.dataset.imgSrc;
+                    addToCart(id, title, price, imgSrc, 1);
+                } else {
+                    // Remove upsell item
+                    removeFromCart(id);
+                }
+            });
+            
+            // Cart Checkout Button
+            cartCheckoutBtn.addEventListener('click', () => {
+                if (!cartTermsCheckbox.checked) return;
+                
+                // Go to checkout page
+                showPage('checkout');
+            });
+            
+            // --- NEW: Complete Order Event Listener ---
+            completeOrderBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                
+                // 1. Get Form Values
+                const orderDetails = {
+                    contact: document.getElementById('checkout-contact').value,
+                    firstName: document.getElementById('checkout-firstname').value,
+                    lastName: document.getElementById('checkout-lastname').value,
+                    address: document.getElementById('checkout-address').value,
+                    apartment: document.getElementById('checkout-apartment').value,
+                    city: document.getElementById('checkout-city').value,
+                    postalCode: document.getElementById('checkout-postalcode').value,
+                };
+                
+                // 2. Simple Validation
+                if (!orderDetails.contact || !orderDetails.firstName || !orderDetails.lastName || !orderDetails.address || !orderDetails.city) {
+                    // In a real app, you'd show a proper error message
+                    console.error("Please fill out all required fields.");
+                    alert("Please fill out all required fields: Contact, Name, Address, and City.");
+                    return;
+                }
+                
+                // 3. Check for Firebase & Cart
+                if (!db) {
+                    console.error("Firebase is not initialized. Cannot complete order.");
+                    alert("An error occurred. Please try again later.");
+                    return;
+                }
+                if (shoppingCart.length === 0) {
+                    console.error("Cart is empty. Cannot complete order.");
+                    alert("Your cart is empty.");
+                    return;
+                }
+                
+                // 4. Set button to loading state
+                completeOrderBtn.disabled = true;
+                completeOrderBtn.textContent = "Processing...";
+                
+                // 5. Create Order Object
+                const orderData = {
+                    customer: orderDetails,
+                    items: shoppingCart,
+                    subtotal: parsePrice(cartSubtotalEl.textContent),
+                    total: parsePrice(checkoutTotalEl.textContent),
+                    status: "new", // Set an initial status
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp() // Use server timestamp
+                };
+                
+                // 6. Save to Firestore
+                try {
+                    // This will create a new document in the 'orders' collection
+                    const docRef = await db.collection(`artifacts/${appId}/public/data/orders`).add(orderData);
+                    
+                    console.log("Order saved with ID: ", docRef.id);
+                    
+                    // 7. Show Success
+                    checkoutFormContainer.classList.add('hidden');
+                    checkoutSuccessMessage.classList.remove('hidden');
+                    
+                    // 8. Clear Cart
+                    shoppingCart = [];
+                    updateCartView();
+                    upsellCheckbox.checked = false;
+                    cartTermsCheckbox.checked = false;
+                    cartCheckoutBtn.disabled = true;
+                    
+                    // 9. Redirect to home
+                    setTimeout(() => {
+                        showPage('home');
+                        // Reset checkout page for next time
+                        checkoutFormContainer.classList.remove('hidden');
+                        checkoutSuccessMessage.classList.add('hidden');
+                        completeOrderBtn.disabled = false;
+                        completeOrderBtn.textContent = "Complete Order";
+                        // Clear form fields
+                        document.getElementById('checkout-contact').value = '';
+                        document.getElementById('checkout-firstname').value = '';
+                        document.getElementById('checkout-lastname').value = '';
+                        document.getElementById('checkout-address').value = '';
+                        document.getElementById('checkout-apartment').value = '';
+                        document.getElementById('checkout-city').value = '';
+                        document.getElementById('checkout-postalcode').value = '';
+
+                    }, 5000); // 5 seconds
+                    
+                } catch (error) {
+                    console.error("Error adding document: ", error);
+                    alert("There was an error placing your order. Please try again.");
+                    // Reset button
+                    completeOrderBtn.disabled = false;
+                    completeOrderBtn.textContent = "Complete Order";
+                }
+            });
+
+        });
+    </script>
+
+
+    <!-- Preloader Script (with 3-second minimum) -->
+    <script>
+        window.addEventListener('load', function() {
+            const startTime = new Date().getTime();
+            const preloader = document.getElementById('preloader');
+            const minDuration = 3000; // 3 seconds
+
+            function hidePreloader() {
+                // Add fade-out class
+                preloader.classList.add('fade-out');
+                
+                // Remove from DOM after transition
+                preloader.addEventListener('transitionend', function() {
+                    preloader.style.display = 'none';
+                });
+            }
+
+            const loadTime = new Date().getTime() - startTime;
+
+            if (loadTime < minDuration) {
+                setTimeout(hidePreloader, minDuration - loadTime);
+            } else {
+                hidePreloader();
+            }
+        });
+    </script>
+</body>
+</html>
+
